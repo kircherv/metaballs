@@ -698,7 +698,9 @@
     function onMove(e) {
       var p = pointers.get(e.pointerId);
       if (!p) {
-        if (e.pointerType === 'mouse') setHot(pickLight(e));   // hover: show which orb can be grabbed
+        if (e.pointerType !== 'mouse') return;
+        idleSince = performance.now();   // a pointer over the render holds the auto-orbit still
+        setHot(pickLight(e));            // and shows which orb can be grabbed
         return;
       }
       var dx = e.clientX - p.x, dy = e.clientY - p.y;
