@@ -6,7 +6,7 @@ Metaballs 2.0: raymarched metaballs in the browser, minimal dependencies; a C++/
 
 ## What it is
 
-- A small WebGL 2 demo of raymarched metaballs: orbit camera, three point lights that show up in the reflections, soft
+- A small WebGL 2 demo of raymarched metaballs: orbit camera, three point lights you can drag, which show up in the reflections, soft
   shadows, a minimal scene for scale (floor, two walls, a dashed vertical axis), exposed parameters, and an X-ray view of
   what the shader computes (normals, depth, step count, a slice of the field).
 - Plain JavaScript and GLSL, no framework, no bundler. Open `index.html` and it runs (also from `file://`).
@@ -36,7 +36,8 @@ sphere around the balls do not march at all.
 
 | Input | Action |
 |---|---|
-| Drag | orbit |
+| Drag a light orb | move that light (in the plane facing you, inside the room); its shadows and reflections follow |
+| Drag elsewhere | orbit |
 | Scroll, pinch | zoom |
 | Double-click, `R` | reset the view |
 | Arrows, `+`, `-` | orbit and zoom with the keyboard (canvas focused) |
@@ -59,6 +60,7 @@ Every one can go in the URL: `index.html?count=6&blend=1.6&mode=field`.
   });
   if (!mb) { /* no WebGL 2: show an image instead */ }
   mb.set({ speed: 0.5 }); mb.setMode('normals'); mb.stop(); mb.start(); mb.destroy();
+  mb.lights[0][1] = 2.5; mb.resetLights();   // the three light positions, [x, y, z] each
 </script>
 ```
 

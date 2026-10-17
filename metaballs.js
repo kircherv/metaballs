@@ -69,12 +69,13 @@
     'uniform vec3 uLightPos[3];',
     'uniform vec3 uLightCol[3];         // linear colour times intensity',
     'uniform int uLights, uMode, uScene, uShadows;',
+    'uniform int uHot;                  // the light under the pointer or being dragged, -1 for none',
     'out vec4 outColor;',
     '',
     'const float W = 3.2;               // floor is [-W, W]^2 at y = 0; walls at x = -W and z = -W',
     'const float H = 3.4;               // wall height',
     'const float AXIS_TOP = 3.0;        // the dashed vertical axis runs from y = 0 to here, then an arrow head',
-    'const float ORB_R = 0.06;          // radius of the visible light orbs',
+    'const float ORB_R = 0.07;          // radius of the visible light orbs (drag one to move its light)',
     '',
     // Colours are authored in sRGB, used in linear.
     'vec3 lin(vec3 c) { return pow(c / 255.0, vec3(2.2)); }',
@@ -211,6 +212,10 @@
     '  vec3 alb = id == 1.0 ? lin(vec3(34, 38, 44)) : lin(vec3(28, 32, 38));',
     '  float g = max(gridLine(q, 0.5, fp) * 0.35, gridLine(q, 1.0, fp));',
     '  alb = mix(alb, lin(vec3(70, 92, 104)), g * 0.5);',
+    '  if (id == 1.0 && uHot >= 0) {           // where the light under the pointer stands on the floor',
+    '    float r = length(p.xz - uLightPos[uHot].xz);',
+    '    alb = mix(alb, vec3(0.9), (1.0 - smoothstep(0.0, max(fp, 0.004) * 1.5, abs(r - 0.16))) * 0.8);',
+    '  }',
     '  vec3 c = alb * 0.18;',
     '  for (int i = 0; i < 3; i++) {',
     '    if (i >= uLights) break;',
@@ -258,10 +263,11 @@
     '  return c + env * fres;',
     '}',
     '',
-    '// The dashed vertical axis through the origin, with an arrow head. Returns its coverage of this pixel.',
-    'float axisCover(vec3 ro, vec3 rd, float tMax, float pix) {',
-    '  if (uScene == 0) return 0.0;',
-    '  // Closest points between the ray and the line x = z = 0.',
+    '// A dashed vertical line at (xz) from y = 0 to top, with an arrow head if head > 0. Returns its coverage of',
+    '// this pixel. The axis of the scene is lineCover(.., vec2(0), AXIS_TOP, 0.26); a dragged light gets one too.',
+    'float lineCover(vec3 ro, vec3 rd, float tMax, float pix, vec2 xz, float top, float head) {',
+    '  ro -= vec3(xz.x, 0.0, xz.y);',
+    '  // Closest points between the ray and the line x = z = 0 (after the shift).',
     '  float b = rd.y, d = dot(rd, ro), e = ro.y, den = 1.0 - b * b;',
     '  if (den < 1e-4) return 0.0;',
     '  float s = (b * e - d) / den;               // along the ray',
@@ -269,10 +275,9 @@
     '  if (s <= 0.0 || s >= tMax) return 0.0;',
     '  float dist = length(ro + rd * s - vec3(0.0, y, 0.0));',
     '  float w = s * pix * 0.9;                   // about one pixel wide at any distance',
-    '  float head = 0.26;',
-    '  if (y < 0.0 || y > AXIS_TOP + head) return 0.0;',
-    '  if (y > AXIS_TOP) {',
-    '    float rad = 0.075 * (AXIS_TOP + head - y) / head;',
+    '  if (y < 0.0 || y > top + head) return 0.0;',
+    '  if (y > top) {',
+    '    float rad = 0.075 * (top + head - y) / head;',
     '    return 1.0 - smoothstep(rad, rad + w, dist);',
     '  }',
     '  float dash = step(fract(y * 4.0), 0.55);',
@@ -360,7 +365,18 @@
     '    float d = length(ro + rd * s - uLightPos[i]);',
     '    col += uLightCol[i] * 0.004 / (d * d + 0.004) * 0.5;',
     '  }',
-    '  float ax = axisCover(ro, rd, tHit, pix);',
+    '  // The grab ring around each light orb (bright on the one under the pointer), and its line down to the floor.',
+    '  for (int i = 0; i < 3; i++) {',
+    '    if (i >= uLights) break;',
+    '    float s = dot(uLightPos[i] - ro, rd);',
+    '    if (s <= 0.0 || (s > tHit && kind != 3)) continue;',
+    '    float d = length(ro + rd * s - uLightPos[i]);',
+    '    float w = s * pix;',
+    '    float ring = 1.0 - smoothstep(w * 0.6, w * 1.6, abs(d - ORB_R * 2.4));',
+    '    col = mix(col, vec3(1.0), ring * (i == uHot ? 0.9 : 0.22));',
+    '  }',
+    '  float ax = uScene == 1 ? lineCover(ro, rd, tHit, pix, vec2(0.0), AXIS_TOP, 0.26) : 0.0;',
+    '  if (uHot >= 0) ax = max(ax, lineCover(ro, rd, tHit, pix, uLightPos[uHot].xz, uLightPos[uHot].y - ORB_R * 2.6, 0.0) * 0.8);',
     '  col = mix(col, lin(vec3(200, 210, 220)) * 0.8, ax * 0.85);',
     '  outColor = vec4(tonemap(col) + dither, 1.0);',
     '}'
@@ -448,7 +464,7 @@
       gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('metaballs: ' + gl.getProgramInfoLog(prog));
       ['uRes', 'uCamPos', 'uCamRight', 'uCamUp', 'uCamFwd', 'uTarget', 'uTan', 'uBalls', 'uCount', 'uIso', 'uBlend',
-        'uRho', 'uIsoR', 'uBound', 'uLightPos', 'uLightCol', 'uLights', 'uMode', 'uScene', 'uShadows'
+        'uRho', 'uIsoR', 'uBound', 'uLightPos', 'uLightCol', 'uLights', 'uMode', 'uScene', 'uShadows', 'uHot'
       ].forEach(function (n) { loc[n] = gl.getUniformLocation(prog, n) || gl.getUniformLocation(prog, n + '[0]'); });
       gl.bindVertexArray(gl.createVertexArray());   // gl_VertexID needs a bound (empty) VAO
       timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
@@ -464,6 +480,9 @@
     var cam = { yaw: VIEW.yaw, pitch: VIEW.pitch, dist: VIEW.dist, target: CENTRE.slice() };
     var basis = { pos: [0, 0, 0], right: [1, 0, 0], up: [0, 1, 0], fwd: [0, 0, -1] };
     var vel = { yaw: 0, pitch: 0 };
+    var lights = LIGHTS.map(function (l) { return l.pos.slice(); });   // the visitor can drag them
+    var hot = -1, dragLight = -1;
+    var tanX = 1, tanY = 1;
     var time = 0, lastNow = 0, idleSince = 0;
     var running = false, raf = 0, destroyed = false, lost = false;
     var scale = 1, slowFrames = 0;
@@ -550,8 +569,9 @@
       gl.uniform3fv(loc.uTarget, cam.target);
       // The field of view applies to the shorter side, so a phone in portrait sees the same scene, not a crop.
       var tf = Math.tan(FOV_Y / 2), aspect = canvas.width / canvas.height;
-      if (aspect >= 1) gl.uniform2f(loc.uTan, tf * aspect, tf);
-      else gl.uniform2f(loc.uTan, tf, tf / aspect);
+      tanX = aspect >= 1 ? tf * aspect : tf;
+      tanY = aspect >= 1 ? tf : tf / aspect;
+      gl.uniform2f(loc.uTan, tanX, tanY);
       gl.uniform4fv(loc.uBalls, ballData);
       gl.uniform1i(loc.uCount, n);
       gl.uniform1f(loc.uIso, params.iso);
@@ -560,8 +580,8 @@
       gl.uniform1f(loc.uIsoR, Math.pow(params.iso, -0.5 / params.blend));
       gl.uniform4fv(loc.uBound, bound);
       var lp = [], lc = [];
-      LIGHTS.forEach(function (l) {
-        lp.push(l.pos[0], l.pos[1], l.pos[2]);
+      LIGHTS.forEach(function (l, i) {
+        lp.push(lights[i][0], lights[i][1], lights[i][2]);
         lc.push(l.col[0] * l.power, l.col[1] * l.power, l.col[2] * l.power);
       });
       gl.uniform3fv(loc.uLightPos, lp);
@@ -570,6 +590,7 @@
       gl.uniform1i(loc.uMode, MODES.indexOf(mode));
       gl.uniform1i(loc.uScene, params.scene ? 1 : 0);
       gl.uniform1i(loc.uShadows, params.shadows ? 1 : 0);
+      gl.uniform1i(loc.uHot, hot < nl ? hot : -1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
       if (timing) gl.endQuery(timerExt.TIME_ELAPSED_EXT);
@@ -619,8 +640,55 @@
     function dragging() { return pointers.size > 0; }
     function poke() { idleSince = performance.now(); invalidate(); }
 
+    // ---------- Lights: grab an orb and drag it; it moves in the plane that faces the camera, inside the room ----------
+    function pointerRay(e) {
+      var r = canvas.getBoundingClientRect();
+      var nx = ((e.clientX - r.left) / r.width) * 2 - 1, ny = 1 - ((e.clientY - r.top) / r.height) * 2;
+      var b = basis, d = [0, 0, 0];
+      for (var a = 0; a < 3; a++) d[a] = b.fwd[a] + b.right[a] * nx * tanX + b.up[a] * ny * tanY;
+      var l = Math.hypot(d[0], d[1], d[2]);
+      return [d[0] / l, d[1] / l, d[2] / l];
+    }
+    // The light whose orb is under the pointer (within a few pixels, more for a finger), or -1.
+    function pickLight(e) {
+      if (mode === 'steps' || mode === 'field') return -1;
+      var r = canvas.getBoundingClientRect(), d = pointerRay(e), best = -1, bestD = 1e9;
+      var slack = (e.pointerType === 'mouse' ? 10 : 24) * 2 * tanY / r.height;   // pixels, as an angle
+      for (var i = 0; i < clamp(params.lights | 0, 1, 3); i++) {
+        var v = [lights[i][0] - basis.pos[0], lights[i][1] - basis.pos[1], lights[i][2] - basis.pos[2]];
+        var s = v[0] * d[0] + v[1] * d[1] + v[2] * d[2];
+        if (s <= 0) continue;
+        var miss = Math.hypot(v[0] - d[0] * s, v[1] - d[1] * s, v[2] - d[2] * s);
+        if (miss < 0.07 * 2.6 + slack * s && s < bestD) { best = i; bestD = s; }
+      }
+      return best;
+    }
+    function moveLight(e) {
+      var d = pointerRay(e), L = lights[dragLight], f = basis.fwd, o = basis.pos;
+      var den = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+      if (den < 1e-3) return;
+      var t = ((L[0] - o[0]) * f[0] + (L[1] - o[1]) * f[1] + (L[2] - o[2]) * f[2]) / den;
+      L[0] = clamp(o[0] + d[0] * t, -3.05, 3.05);
+      L[1] = clamp(o[1] + d[1] * t, 0.25, 3.25);
+      L[2] = clamp(o[2] + d[2] * t, -3.05, 3.05);
+    }
+    function setHot(i) {
+      if (i === hot) return;
+      hot = i;
+      canvas.style.cursor = i >= 0 ? (dragLight >= 0 ? 'grabbing' : 'grab') : '';
+      invalidate();
+    }
+
     function onDown(e) {
       if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+      if (pointers.size === 0) {
+        var i = pickLight(e);
+        if (i >= 0) {
+          dragLight = i;
+          setHot(i);
+          canvas.style.cursor = 'grabbing';
+        }
+      }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* already released */ }
       vel.yaw = vel.pitch = 0;
@@ -629,10 +697,15 @@
     }
     function onMove(e) {
       var p = pointers.get(e.pointerId);
-      if (!p) return;
+      if (!p) {
+        if (e.pointerType === 'mouse') setHot(pickLight(e));   // hover: show which orb can be grabbed
+        return;
+      }
       var dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
-      if (pointers.size === 1) {
+      if (dragLight >= 0) {
+        moveLight(e);
+      } else if (pointers.size === 1) {
         vel.yaw = -dx * 0.006; vel.pitch = dy * 0.006;
         cam.yaw += vel.yaw; cam.pitch += vel.pitch;
       } else if (pointers.size === 2) {
@@ -645,6 +718,15 @@
     function onUp(e) {
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinchDist = 0;
+      if (pointers.size === 0 && dragLight >= 0) {
+        dragLight = -1;
+        canvas.style.cursor = '';
+        setHot(e.pointerType === 'mouse' ? pickLight(e) : -1);
+      }
+      poke();
+    }
+    function resetLights() {
+      lights = LIGHTS.map(function (l) { return l.pos.slice(); });
       poke();
     }
     function pinchLength() {
@@ -684,6 +766,7 @@
       on(canvas, 'pointermove', onMove);
       on(canvas, 'pointerup', onUp);
       on(canvas, 'pointercancel', onUp);
+      on(canvas, 'pointerleave', function () { if (dragLight < 0) setHot(-1); });
       on(canvas, 'dblclick', resetView);
       on(canvas, 'keydown', onKey);
       if (options.wheelZoom !== false) on(canvas, 'wheel', onWheel, { passive: false });
@@ -710,6 +793,9 @@
       },
       setMode: function (m) { if (MODES.indexOf(m) >= 0) { mode = m; invalidate(); } return api; },
       resetView: resetView,
+      // The three light positions ([x, y, z] each), which the visitor can drag; resetLights() puts them back.
+      get lights() { return lights; },
+      resetLights: resetLights,
       start: function () { running = true; lastNow = 0; invalidate(); return api; },
       stop: function () { running = false; if (raf) root.cancelAnimationFrame(raf); raf = 0; lastNow = 0; return api; },
       // Draw one frame at time t (seconds) without the loop: posters, tests.

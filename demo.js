@@ -26,6 +26,7 @@
     mode: url.get('mode'),
     onStats: showStats
   });
+  window.metaballs = mb;   // for the console: metaballs.set({ count: 3 }), metaballs.lights, ...
   if (!mb) {
     document.body.innerHTML = '<p class="fallback">This browser has no WebGL 2, so the metaballs cannot run here.</p>';
     return;
@@ -95,6 +96,7 @@
     Object.keys(P).forEach(function (k) { d[k] = P[k].value; });
     mb.set(d);
     mb.resetView();
+    mb.resetLights();
     showAll();
   });
 
