@@ -7,7 +7,7 @@
     final: 'Final: three point lights, soft shadows on the floor and walls, reflections of the scene and of the light orbs.',
     normals: 'Normals: the analytic gradient of the field, -grad F, mapped to RGB.',
     depth: 'Depth: distance from the camera to the first surface (white = near).',
-    steps: 'Steps: raymarch iterations per pixel (blue = few, amber = many, budget 112).',
+    steps: 'Steps: raymarch iterations per pixel (blue = few, amber = many, budget 128).',
     field: 'Field: log2(F / threshold) on a slice through the centre, facing you. Amber is the surface, dots are the ball centres.'
   };
 
