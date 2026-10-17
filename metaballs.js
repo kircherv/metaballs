@@ -20,7 +20,7 @@
   'use strict';
 
   var MAX_BALLS = 16;
-  var MAX_STEPS = 112;
+  var MAX_STEPS = 128;
   var MODES = ['final', 'normals', 'depth', 'steps', 'field'];
 
   // The parameters a visitor can play with. Every one can be set with mb.set({ name: value }).
@@ -132,7 +132,9 @@
     '    float F = field(ro + rd * t);',
     '    if (F >= uIso) { hit = true; break; }',
     '    tPrev = t;',
-    '    t += clamp(0.6 * isoDist(F), 0.004, 0.35);',
+    '    // The smallest step grows with distance (about a pixel): rays that graze one ball keep enough budget',
+    '    // to reach the balls behind it instead of running out of steps and showing the background.',
+    '    t += clamp(0.6 * isoDist(F), max(0.004, 0.0025 * t), 0.35);',
     '  }',
     '  if (!hit) return vec2(-1.0, steps);',
     '  float lo = tPrev, hi = t;',
@@ -244,7 +246,7 @@
     '  vec3 env = mix(lin(vec3(10, 22, 30)), lin(vec3(40, 110, 130)), smoothstep(-0.2, 0.9, r.y));   // studio sky',
     '  vec3 pn; float pid;',
     '  float tp = tracePlanes(p + n * 0.01, r, pn, pid);',
-    '  if (pid > 0.0) env = shadePlane(p + r * tp, pn, pid, fp * 4.0, false);',
+    '  if (pid > 0.0) env = shadePlane(p + r * tp, pn, pid, fp * 4.0, false) + env * 0.3;   // a dim wall still shows the rim',
     '  for (int i = 0; i < 3; i++) {',
     '    if (i >= uLights) break;',
     '    vec3 toL = uLightPos[i] - p;',
